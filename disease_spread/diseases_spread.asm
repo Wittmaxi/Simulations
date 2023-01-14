@@ -6,6 +6,8 @@
 ; uasm -win64 diseases_spread.asm       ;
 ; ld diseases_spread.o                  ;
 ;---------------------------------------;
+; Sa 14. Jan 21:19:47 CET 2023          ;
+;---------------------------------------;
 ;=======================================;
 ; Macros                                ;
 ;=======================================;
@@ -22,10 +24,8 @@ RawPrint MACRO ptr, len                 ;
 ENDM                                    ;
 ;---------------------------------------;
 BSS SEGMENT                             ;
-    prevGenHealthy DD 0.9               ;
-    curGenHealthy DD 0.4                ;
-    iteration DB 0                      ;
-    coeff DD 1                          ;
+    genSick DD 0.001                    ;
+    coeff DD 0.1                        ;
     percentConvert DD 100               ;
     percentBuff DD ?                    ;
 BSS ENDS                                ;
@@ -35,11 +35,11 @@ DATA SEGMENT                            ;
     ;- control sequences for changing the colors of graphs
     newL DB 0AH                         ;
     newLLen EQU 1                       ;
-    ;
-    greenText DB 1BH, "[32;1m"       ;
+    ;                                   ;
+    greenText DB 1BH, "[0;32;1m"          ;
     greenTextLen EQU $ - greenText      ;
     ;                                   ;
-    redText DB 1BH, "[31;1m"         ;
+    redText DB 1BH, "[31;1;5m"            ;
     redtextLen EQU $ - redText          ;
     ;                                   ;
     blockChar DB 023H                   ;
@@ -57,18 +57,21 @@ TEXT SEGMENT                            ;
 PUBLIC _start                           ;
 _start PROC                             ;
     ;- prints the greeter               ;
-    RawPrint OFFSET greenText, greenTextLen
     RawPrint OFFSET greeter, greeterLen ;
-    RawPrint OFFSET redTExt, redTextLen ;
     RawPrint OFFSET newL, newLLen       ;
     RawPrint OFFSET newL, newLLen       ;
     RawPrint OFFSET newL, newLLen       ;
-
-    XOR rcx, rcx                        ;
-    MOV ecx, DWORD PTR [prevGenHealthy] ;
+    ;- print amount of sick people      ;
+    MOV rcx, 100                        ;
+@@a:                                    ;
     PUSH rcx                            ;
-    CALL printGraph
-    ;- init                             ;
+    CALL printGraph                     ;
+    ;-- calculate the next gen          ;
+    CALL calcGen                        ;
+    ;-- loop                            ;
+    POP rcx                             ;
+    LOOP @@a                            ;
+    ;- next generation                  ;
     ;- exit execution                   ;
     ;-- Print newline                   ;
     RawPrint OFFSET newL, newLLen       ;
@@ -83,68 +86,77 @@ _start ENDP                             ;
 ; calcGen                               ;
 ;---------------------------------------;
 calcGen PROC                            ;
-
+    ENTER 0, 0                          ;
+    ;-                                  ;
+    FLD DWORD PTR [genSick]             ;
+    FLD1                                ;
+    FLD DWORD PTR [genSick]             ;
+    FSUBP                               ; (1 - p)
+    FMULP                               ; p * (1 - p)
+    FMUL DWORD PTR [coeff]              ; k * p * (1 - p)
+    FLD DWORD PTR [genSick]             ;
+    FADDP                               ; p_(t+1) + k * p * (1 - p)
+    FSTP DWORD PTR [genSick]            ;
+    ;-                                  ;
+    LEAVE                               ;
+    RET                                 ;
 calcGen ENDP                            ;
                                         ;
 ;---------------------------------------;
 ; Print graph                           ;
 ;---------------------------------------;
-; RBP + 16 (DWORD) = percentage healthy ;
-;---------------------------------------;
 printGraph PROC                         ;
-    ENTER 0, 0                          ; TODO: move percentBuff into the stackframe
     ;- convert percentages to real number
-    FLD DWORD PTR [RBP + 16]            ;
-    FILD DWORD PTR [percentConvert]     ;
-    FMUL st(0), st(1)                   ; multiply the percentage with 100
-    FIST DWORD PTR [percentBuff]        ;
-    ;- print the healthy patients first ;
+    FLD DWORD PTR [genSick]             ;
+    FIMUL DWORD PTR [percentConvert]    ; percentage * 100 - convert to real number
+    FISTP DWORD PTR [percentBuff]       ;
+    ;- print the sick patients first ;
     ;-- Select Color                    ;
-    RawPrint OFFSET greenText, greenTextLen
-    ;-- Print the blocks
+    RawPrint OFFSET redText, redTextLen ;
+    ;-- Print the blocks                ;
     XOR rcx, rcx                        ;
     MOV ecx, DWORD PTR [percentBuff]    ;
-    PUSH rcx                            ;
     CALL printBlocks                    ;
-    ;- Now unhealthy patients           ;
+    ;- Now healtyh patients             ;
     ;-- Select color                    ;
-    RawPrint OFFSET redText, redTextLen ;
+    RawPrint OFFSET greenText, greenTextLen ;
     ;-- Calculate amount                ;
     XOR rcx, rcx                        ;
     MOV cx, 100                         ;
     MOV eax, DWORD PTR [percentBuff]    ;
     SUB cx, ax                          ;
     ;-- print out                       ;
-    PUSH rcx                            ;
     CALL printBlocks                    ;
+    ;- New line                         ;
+    RawPrint OFFSET newL, newLLen       ;
     ;-                                  ;
-    LEAVE                               ;
     RET                                 ;
 printGraph ENDP                         ;
                                         ;
 ;---------------------------------------;
 ; printBlocks                           ;
 ;---------------------------------------;
-; RSP + 16 (WORD) = amount of blocks    ;
+; RCX = amount of loops                 ;
 ;---------------------------------------;
 printBlocks PROC                        ;
-    ENTER 0, 0                          ;
-    MOV rcx, QWORD PTR [RBP + 16]       ;
-    ;- if zero, skip                    ; LOOP with rcx = 0 will underflow and loop a ton of times
+    ;- error detection                  ;
+    ;-- if zero, skip                   ; LOOP with rcx = 0 will underflow and loop a ton of times
     OR rcx, rcx                         ;
     JZ @@x                              ;
+    ;-- If more than 100, reset to 100  ;
+    CMP rcx, 100                        ;
+    JLE @@loop                          ;
+    MOV rcx, 100                        ;
     ;- Loop as many times as required and print
 @@loop:                                 ;
     PUSH rcx                            ;
     RawPrint OFFSET blockChar, blockCharLen; invalidates RCX
     POP rcx                             ;
     LOOP @@loop                         ;
+    ;-                                  ;
 @@x:                                    ;
-    LEAVE                               ;
     RET                                 ;
 printBlocks ENDP                        ;
-
-
                                         ;
 ;---------------------------------------;
 TEXT ENDS                               ;
