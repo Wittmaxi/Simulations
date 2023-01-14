@@ -1,0 +1,4 @@
+*.o
+*.err
+a.out
+*.swp
