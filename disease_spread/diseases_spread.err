@@ -1,3 +1,0 @@
-diseases_spread.asm(65) : Error A2049: Invalid instruction operands
- InitVars(1)[diseases_spread.asm]: Macro called from
-  diseases_spread.asm(65): Main line code
