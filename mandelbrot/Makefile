@@ -2,4 +2,4 @@
 # Hence, I am forced to do this trickery...
 # Replace the processing-java path with your path
 default:
-	~/Downloads/processing-4.1.1/processing-java --sketch=./feigenbaum --run
+	~/Downloads/processing-4.1.1/processing-java --sketch=./mandelbrot --run
